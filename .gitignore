@@ -1,0 +1,6 @@
+**/.DS_Store
+**/.vscode
+**/datasets_f
+**/*.pth
+DTrOCR/output
+**/__pycache__
