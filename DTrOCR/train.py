@@ -18,8 +18,7 @@ import tqdm
 import random
 from dataset import SynthtigerDataset
 from torch.utils.data import random_split
-
-
+from torch.utils.data import Subset
 
 def compute_loss(args, model, inputs, batch_size, criterion, text, length, pred_device):
     def send_inputs_to_device(dictionary, device):
@@ -68,6 +67,7 @@ def main():
     model_ema = utils.ModelEma(model, args.ema_decay, device=device)
     model.zero_grad()
 
+    datasets_locations = ["../datasets_f/dataset1", "../datasets_f/dataset2"]
 
     def load_samples_from_directory(root_dir, gt_file):
         samples = []
@@ -88,7 +88,7 @@ def main():
         return samples
 
     gt_file = "gt_basic.txt"
-    datasets_locations = ["./datasets_f/dataset1", "./datasets_f/dataset2"]
+    datasets_locations = ["../datasets_f/dataset1", "../datasets_f/dataset2"]
 
     # read samples
     samples = []
@@ -113,24 +113,18 @@ def main():
         generator=torch.Generator().manual_seed(42)
     )
 
-    criterion = torch.nn.CTCLoss(reduction='none', zero_infinity=True)
-    converter = utils.CTCLabelConverter(alphabet)
-
     optimizer = sam.SAM(model.parameters(), torch.optim.AdamW, lr=1e-7, betas=(0.9, 0.99), weight_decay=args.weight_decay)
     criterion = torch.nn.CTCLoss(reduction='none', zero_infinity=True)
     converter = utils.CTCLabelConverter(alphabet)
 
-    best_cer, best_wer = 1e+6, 1e+6
-    train_loss = 0.0
-
-    train_dataloader = DataLoader(train_dataset, batch_size=args.train_bs, shuffle=True)
-    validation_dataloader = DataLoader(validation_dataset, batch_size=args.val_bs, shuffle=False)
-    #test_dataloader = DataLoader(test_dataset, batch_size=10000, shuffle=False)
+    train_dataloader = DataLoader(train_dataset, batch_size=100, shuffle=True)
+    validation_dataloader = DataLoader(validation_dataset, batch_size=100, shuffle=False)
+    test_dataloader = DataLoader(test_dataset, batch_size=100, shuffle=False)
 
     best_cer, best_wer = 1e+6, 1e+6
     train_loss = 0.0
     nb_iter = 0
-    EPOCHS = 5
+    EPOCHS = 1
 
     checkpoint_path = os.path.join(args.save_dir, 'best_CER.pth')
     checkpoint = torch.load(checkpoint_path, map_location=device)
@@ -144,12 +138,9 @@ def main():
         logger.info(f'\nEpoch {epoch + 1}/{EPOCHS}')
         
         for step, inputs in enumerate(train_dataloader):
-
-            if step < 28000 + 10700 + 39750 and epoch == 0:
-                continue
-
             nb_iter += 1
             label = inputs['label']
+
             del(inputs['label'])
             optimizer, current_lr = utils.update_lr_cos(nb_iter, args.warm_up_iter, args.total_iter, args.max_lr, optimizer)
 
@@ -212,7 +203,6 @@ def main():
                     writer.add_scalar('./VAL/bestWER', best_wer, nb_iter)
                     writer.add_scalar('./VAL/val_loss', val_loss, nb_iter)
                     model.train()
-
 
 if __name__ == '__main__':
     main()

@@ -18,7 +18,14 @@ class SynthtigerDataset(Dataset):
 
     def __getitem__(self, idx):
         img_path, text = self.samples[idx]
-        img = Image.open(img_path).convert('RGB')
+        try:
+            img = Image.open(img_path).convert('RGB')
+        except (FileNotFoundError, OSError) as e:
+            print(f"Warning: Could not load image at {img_path}: {e}")
+            
+            dummy_img = Image.new('RGB', (224, 224), color='black')
+            img = dummy_img
+            text = " "
 
         inputs = self.processor(
             images=img,
@@ -32,4 +39,3 @@ class SynthtigerDataset(Dataset):
             'attention_mask': inputs.attention_mask[0],
             'label':text
         }
-   
