@@ -101,7 +101,7 @@ def main():
     best_cer, best_wer = 1e+6, 1e+6
     train_loss = 0.0
     step = 0
-    EPOCHS = 1
+    EPOCHS = args.epochs
 
     checkpoint_path = os.path.join(args.save_dir, 'DTrOCR_pretrained.pth')
     checkpoint = torch.load(checkpoint_path, map_location=device)

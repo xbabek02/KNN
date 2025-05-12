@@ -9,6 +9,7 @@ def get_args_parser():
     parser.add_argument('--out-dir', type=str, default='./output', help='output directory')
     parser.add_argument('--train-bs', default=8, type=int, help='train batch size')
     parser.add_argument('--val-bs', default=1, type=int, help='validation batch size')
+    parser.add_argument('--epochs', default=5, type=int, help='nb of epochs')
     parser.add_argument('--num-workers', default=0, type=int, help='nb of workers')
     parser.add_argument('--eval-iter', default=1000, type=int, help='nb of iterations to run evaluation')
     parser.add_argument('--total-iter', default=100000, type=int, help='nb of total iterations for training')
