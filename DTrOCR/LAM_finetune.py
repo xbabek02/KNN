@@ -37,7 +37,7 @@ def compute_loss(args, model, inputs, batch_size, criterion, text, length, pred_
     return loss
 
 
-def load_lam_dataloaders(config:DTrOCRConfig, batch_size=100):
+def load_lam_dataloaders(config:DTrOCRConfig,charset=None, batch_size=100):
     dataset_name = "vpippi/lam-dataset"
     path = kagglehub.dataset_download(dataset_name)
 
@@ -50,9 +50,9 @@ def load_lam_dataloaders(config:DTrOCRConfig, batch_size=100):
 
     os.path.exists(path_to_train_json) and os.path.exists(path_to_images) and os.path.exists(path_to_test_json) and os.path.exists(path_to_valid_json)
 
-    train_dataset = LAM(f"{path}/LAM", 'basic',  nameset='train', config=config)
-    val_dataset = LAM(f"{path}/LAM", 'basic',  nameset='val', charset=train_dataset.charset, config=config)
-    test_dataset  = LAM(f"{path}/LAM", 'basic',  nameset='test', charset=train_dataset.charset, config=config)
+    train_dataset = LAM(f"{path}/LAM", 'basic', charset=charset,  nameset='train', config=config)
+    val_dataset = LAM(f"{path}/LAM", 'basic', charset=charset,  nameset='val', config=config)
+    test_dataset  = LAM(f"{path}/LAM", 'basic', charset=charset,  nameset='test', config=config)
 
     train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=True, pin_memory=True)
     val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=batch_size, shuffle=True, pin_memory=True)
@@ -96,29 +96,31 @@ def main():
     criterion = torch.nn.CTCLoss(reduction='none', zero_infinity=True)
     converter = utils.CTCLabelConverter(alphabet)
 
-    train_dataloader, validation_dataloader, test_dataloader = load_lam_dataloaders(config)
+    train_dataloader, validation_dataloader, test_dataloader = load_lam_dataloaders(config, alphabet)
 
     best_cer, best_wer = 1e+6, 1e+6
     train_loss = 0.0
     step = 0
     EPOCHS = args.epochs
 
-    checkpoint_path = os.path.join(args.save_dir, 'DTrOCR_pretrained.pth')
+    checkpoint_path = os.path.join(args.save_dir, 'best_CER.pth')
     checkpoint = torch.load(checkpoint_path, map_location=device)
 
     # 3. Load states
     model.load_state_dict(checkpoint['model'])
     model_ema.ema.load_state_dict(checkpoint['state_dict_ema'])
     optimizer.load_state_dict(checkpoint['optimizer'])
+    nb_iter = 0
 
     for epoch in range(EPOCHS):
         logger.info(f'\nEpoch {epoch + 1}/{EPOCHS}')
         
         for step, inputs in enumerate(train_dataloader):
+            nb_iter+=1
             label = inputs['label']
 
             del(inputs['label'])
-            optimizer, current_lr = utils.update_lr_cos(step, args.warm_up_iter, args.total_iter, args.max_lr, optimizer)
+            optimizer, current_lr = utils.update_lr_cos(nb_iter, args.warm_up_iter, args.total_iter, args.max_lr, optimizer)
 
             optimizer.zero_grad()
             text, length = converter.encode(label)
@@ -130,19 +132,19 @@ def main():
             compute_loss(args, model, inputs, batch_size, criterion, text, length, device).backward()
             optimizer.second_step(zero_grad=True)
             model.zero_grad()
-            model_ema.update(model, num_updates=step / 2)
+            model_ema.update(model, num_updates=nb_iter / 2)
             train_loss += loss.item()
 
-            if step % args.print_iter == 0:
+            if nb_iter % args.print_iter == 0:
                 train_loss_avg = train_loss / args.print_iter
 
-                logger.info(f'Iter : {step} \t LR : {current_lr:0.5f} \t training loss : {train_loss_avg:0.5f} \t ' )
+                logger.info(f'Iter : {nb_iter} \t LR : {current_lr:0.5f} \t training loss : {train_loss_avg:0.5f} \t ' )
 
-                writer.add_scalar('./Train/lr', current_lr, step)
-                writer.add_scalar('./Train/train_loss', train_loss_avg, step)
+                writer.add_scalar('./Train/lr', current_lr, nb_iter)
+                writer.add_scalar('./Train/train_loss', train_loss_avg, nb_iter)
                 train_loss = 0.0
 
-            if step % args.eval_iter == 0:
+            if nb_iter % args.eval_iter == 0:
                 model.eval()
                 with torch.no_grad():
                     val_loss, val_cer, val_wer, preds, labels = valid.validation(model_ema.ema,
@@ -173,11 +175,11 @@ def main():
                     logger.info(
                         f'Val. loss : {val_loss:0.3f} \t CER : {val_cer:0.4f} \t WER : {val_wer:0.4f} \t ')
 
-                    writer.add_scalar('./VAL/CER', val_cer, step)
-                    writer.add_scalar('./VAL/WER', val_wer, step)
-                    writer.add_scalar('./VAL/bestCER', best_cer, step)
-                    writer.add_scalar('./VAL/bestWER', best_wer, step)
-                    writer.add_scalar('./VAL/val_loss', val_loss, step)
+                    writer.add_scalar('./VAL/CER', val_cer, nb_iter)
+                    writer.add_scalar('./VAL/WER', val_wer, nb_iter)
+                    writer.add_scalar('./VAL/bestCER', best_cer, nb_iter)
+                    writer.add_scalar('./VAL/bestWER', best_wer, nb_iter)
+                    writer.add_scalar('./VAL/val_loss', val_loss, nb_iter)
                     model.train()
 
 if __name__ == '__main__':

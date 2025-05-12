@@ -26,8 +26,13 @@ class LAM(torch.utils.data.Dataset):
         if charset is None:
             labels = [sample['text'] for sample in self.samples]
             charset = sorted(set(''.join(labels)))
-
         self.charset = charset
+
+        # Filter out any characters not in the allowed charset
+        for sample in self.samples:
+            filtered_text = ''.join([c for c in sample['text'] if c in self.charset])
+            sample['text'] = filtered_text
+        
         self.char_to_idx = dict(zip(self.charset, range(len(self.charset))))
         self.idx_to_char = dict(zip(range(len(self.charset)), self.charset))
 
