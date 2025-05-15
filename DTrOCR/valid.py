@@ -24,9 +24,11 @@ def validation(model, criterion, evaluation_loader, converter, device):
     count = 0
     all_preds_str = []
     all_labels = []
+    
+    all_cers = []
+    all_wers = []
 
     for i, inputs in enumerate(evaluation_loader):
-        
         labels = inputs['label']
         del(inputs['label'])
 
@@ -59,12 +61,13 @@ def validation(model, criterion, evaluation_loader, converter, device):
                 norm_ED += tmp_ED / float(len(gt_cer))
             tot_ED += tmp_ED
             length_of_gt += len(gt_cer)
+            all_cers.append(tmp_ED / float(len(gt_cer)))
 
         for pred_wer, gt_wer in zip(preds_str, labels):
             pred_wer = utils.format_string_for_wer(pred_wer)
             gt_wer = utils.format_string_for_wer(gt_wer)
-            pred_wer = pred_wer.split(" ")
-            gt_wer = gt_wer.split(" ")
+            pred_wer = pred_wer.split()
+            gt_wer = gt_wer.split()
             tmp_ED_wer = editdistance.eval(pred_wer, gt_wer)
 
             if len(gt_wer) == 0:
@@ -74,9 +77,10 @@ def validation(model, criterion, evaluation_loader, converter, device):
 
             tot_ED_wer += tmp_ED_wer
             length_of_gt_wer += len(gt_wer)
+            all_wers.append(tmp_ED_wer / float(len(gt_wer)))
 
     val_loss = valid_loss / count
     CER = tot_ED / float(length_of_gt)
     WER = tot_ED_wer / float(length_of_gt_wer)
-
-    return val_loss, CER, WER, preds_str, labels
+    
+    return val_loss, CER, WER, all_cers, all_wers, all_preds_str, all_labels

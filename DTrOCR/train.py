@@ -169,7 +169,7 @@ def main():
             if nb_iter % args.eval_iter == 0:
                 model.eval()
                 with torch.no_grad():
-                    val_loss, val_cer, val_wer, preds, labels = valid.validation(model_ema.ema,
+                    val_loss, val_cer, val_wer, *_ = valid.validation(model_ema.ema,
                                                                                 criterion,
                                                                                 validation_dataloader,
                                                                                 converter, device)

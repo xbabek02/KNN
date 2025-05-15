@@ -10,6 +10,37 @@ import logging
 from copy import deepcopy
 from collections import OrderedDict
 
+
+
+import matplotlib.pyplot as plt
+from collections import Counter
+
+from dataclasses import dataclass
+from pathlib import Path
+import xml.etree.ElementTree as ET
+from PIL import Image
+
+import Levenshtein
+import re
+
+import pickle
+import matplotlib.pyplot as plt
+import glob
+import re
+import numpy as np
+    
+
+import matplotlib.pyplot as plt
+import seaborn as sns
+import pandas as pd
+from collections import Counter
+import re
+from typing import List, Tuple
+
+
+import matplotlib.pyplot as plt
+
+
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
@@ -173,7 +204,298 @@ class ModelEma:
                 ema_v.copy_(ema_v * _cdecay + (1. - _cdecay) * model_v)
 
 
-def format_string_for_wer(str):
-    str = re.sub('([\[\]{}/\\()\"\'&+*=<>?.;:,!\-—_€#%°])', r' \1 ', str)
-    str = re.sub('([ \n])+', " ", str).strip()
-    return str
+def format_string_for_wer(s: str) -> str:
+    s = re.sub(r'([\[\]{}/\\()\"\'&+*=<>?.;:,!\-—_€#%°])', r' \1 ', s)
+    s = re.sub(r'([ \n])+', " ", s).strip()
+    return s
+
+# Normalizes the text by converting to lowercase, removing punctuation, and collapsing multiple whitespaces.
+def normalize_text(text: str) -> str:
+    text = re.sub(r'[^\w\s]', '', text.lower())
+    text = ' '.join(text.split())
+    return text
+
+    
+def _normalize_word(word: str) -> str:
+    word = word.lower()
+    word = re.sub(r"[.,!?;:\"\'()`\[\]{}]", "", word)
+    return word.strip()
+
+
+@dataclass
+class Word:
+    id: str
+    file_path: Path
+    writer_id: str
+    transcription: str
+
+def get_words_from_xml(xml_file, word_image_files):
+    tree = ET.parse(xml_file)
+    root = tree.getroot()
+    
+    root_id = root.get('id')
+    writer_id = root.get('writer-id')
+    xml_words = []
+    for line in root.findall('handwritten-part')[0].findall('line'):
+        for word in line.findall('word'):
+            image_file = Path([f for f in word_image_files if f.endswith(word.get('id') + '.png')][0])
+            try:
+                with Image.open(image_file) as _:
+                    xml_words.append(
+                        Word(
+                            id=root_id,
+                            file_path=image_file,
+                            writer_id=writer_id,
+                            transcription=word.get('text')
+                        )
+                    )
+            except Exception:
+                print(f"Error opening image file: {image_file}")
+            
+    return xml_words
+
+    
+
+def calculate_cer(ground_truth: str, prediction: str, normalize: bool = False) -> float:
+    if normalize:
+        ground_truth = normalize_text(ground_truth)
+        prediction = normalize_text(prediction)
+
+    if not ground_truth:
+        return 0.0 if not prediction else 1.0
+
+    # number of edits
+    distance = Levenshtein.distance(prediction, ground_truth)
+
+    return distance / len(ground_truth)
+
+def calculate_wer(ground_truth: str, prediction: str, normalize: bool = False) -> float:
+    if normalize:
+        ground_truth = normalize_text(ground_truth)
+        prediction = normalize_text(prediction)
+
+    # split strings into words (based on whitespace)
+    ground_truth_words = ground_truth.split()
+    prediction_words = prediction.split()
+
+    if not ground_truth_words:
+        return 0.0 if not prediction_words else 1.0
+
+    # calculate Levenshtein distance at the word level
+    distance = Levenshtein.distance(prediction_words, ground_truth_words)
+
+    return distance / len(ground_truth_words)
+
+def calculate_cer_wer(ground_truth: str, prediction: str) -> tuple:
+    # calculate WITHOUT normalization
+    cer_raw = calculate_cer(ground_truth, prediction)
+    wer_raw = calculate_wer(ground_truth, prediction)
+
+    # calculate WITH normalization
+    norm_gt = normalize_text(ground_truth)
+    norm_pred = normalize_text(prediction)
+
+    cer_norm = calculate_cer(norm_gt, norm_pred)
+    wer_norm = calculate_wer(norm_gt, norm_pred)
+
+    print(f"GROUND TRUTH:    '{ground_truth}'")
+    print(f"PREDICTION:      '{prediction}'")
+    print(f"GT normalized:   '{norm_gt}'")
+    print(f"PRED normalized: '{norm_pred}'")
+    print()
+
+    # CER & WER
+    print(f"Raw CER: {cer_raw:.4f} ({cer_raw*100:.2f}%)")
+    print(f"Raw WER: {wer_raw:.4f} ({wer_raw*100:.2f}%)")
+    print()
+
+    print(f"Normalized CER: {cer_norm:.4f} ({cer_norm*100:.2f}%)")
+    print(f"Normalized WER: {wer_norm:.4f} ({wer_norm*100:.2f}%)")
+    print()
+
+    # Accuracy
+    print(f"Normalized Character Accuracy: {(1 - cer_norm):.4f} ({(1 - cer_norm)*100:.2f}%)")
+    print(f"Normalized Word Accuracy:      {(1 - wer_norm):.4f} ({(1 - wer_norm)*100:.2f}%)")
+    print(f"\n{'='*50}\n")
+
+    return (cer_raw, wer_raw), (cer_norm, wer_norm)
+
+
+
+
+def show_image(image, transcription, predicted_text):
+    plt.figure()
+    plt.title(f"True: {transcription}    Predicted: {predicted_text}", fontsize=20)
+    plt.imshow(np.array(image, dtype=np.uint8))
+    plt.xticks([]), plt.yticks([])
+    plt.show()
+
+def prediction_histogram(word_histogram):
+    # count word frequencies
+    true_counts = Counter(word_histogram["true"])
+    predicted_counts = Counter(word_histogram["predicted"])
+    all_words = list(set(true_counts.keys()).union(predicted_counts.keys()))
+
+    # prepare data for plotting
+    true_freqs = [true_counts[word] for word in all_words]
+    predicted_freqs = [predicted_counts[word] for word in all_words]
+
+    x = range(len(all_words))
+    width = 0.4
+
+    plt.figure(figsize=(10, 6))
+    plt.bar([i - width/2 for i in x], true_freqs, width=width, label='Ground Truth')
+    plt.bar([i + width/2 for i in x], predicted_freqs, width=width, label='Predicted')
+    plt.xticks(x, all_words, rotation=90)
+    plt.xlabel('Words')
+    plt.ylabel('Frequency')
+    plt.title('Word Frequency Histogram: Ground Truth vs. Predicted')
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
+
+def plot_train_val_loss():
+    with open("LAM_train_val.pkl", 'rb') as f:
+        data = pickle.load(f)
+        
+    
+        fig, ax1 = plt.subplots(figsize=(12, 6))
+
+        # calculate epoch steps
+        # epoch_interval = 2478.75 # TODO
+        # max_step = data['Step'].max()
+        # epoch_steps = [step for step in range(0, int(max_step + epoch_interval), int(epoch_interval))]
+        
+        x = range(1, len(data['train_losses']) + 1)
+
+        # Plot Losses
+        ax1.plot(x, data['train_losses'], label='Training Loss', marker='o')
+        ax1.plot(x, data['validation_losses'], label='Validation Loss', marker='s')
+        ax1.set_xlabel('Step')
+        ax1.set_ylabel('Loss')
+
+        # Second y-axis for CER
+        # ax2 = ax1.twinx()
+        # ax2.plot(data['Step'], data['Cer'], label='CER', color='gray', linestyle='--', marker='^', alpha=0.6)
+        # ax2.set_ylabel('CER')
+
+        # Add vertical lines for epochs
+        # for i, epoch_step in enumerate(epoch_steps):
+        #     if i == 0:
+        #         continue
+        #     ax1.axvline(x=epoch_step, color='black', linestyle='--', linewidth=1, label='Epoch Marker' if i == 1 else None)
+
+
+        # Combine legends
+        lines, labels = ax1.get_legend_handles_labels()
+        # lines2, labels2 = ax2.get_legend_handles_labels()
+        # ax1.legend(lines + lines2, labels + labels2, loc='upper right')
+        ax1.legend(lines, labels, loc='upper right')
+
+        plt.title("Loss and CER over Steps with Epoch Markers")
+        plt.grid(True)
+        plt.tight_layout()
+        plt.show()
+
+
+
+def plot_loss_acc():
+    files = sorted(glob.glob("LAM_epoch_*.pkl"), key=lambda x: int(re.findall(r'\d+', x)[0]))
+
+    losses = []
+    accuracies = []
+
+    for file in files:
+        with open(file, 'rb') as f:
+            data = pickle.load(f)
+            # losses.append(sum(data['loss']) / len(data['loss']))
+            # accuracies.append(sum(data['acc']) / len(data['acc']))
+            losses.extend(data['loss'])
+            accuracies.extend(data['acc'])
+
+    # steps & epochs
+    step_interval = 5
+    steps = [i * step_interval for i in range(len(losses))]
+    epoch_interval = 1250 * 5
+    epochs = [i * epoch_interval for i in range(len(files))]
+
+    fig, ax1 = plt.subplots(figsize=(12, 6))
+    # losses
+    ax1.plot(steps, losses, label='Training Loss', alpha=0.6)
+    ax1.set_xlabel('Step')
+    ax1.set_ylabel('Loss')
+    # acc
+    ax2 = ax1.twinx()
+    ax2.plot(steps, accuracies, label='Accuracy', color='green', linestyle='--', alpha=0.6)
+    ax2.set_ylabel('Accuracy')
+
+    # vertical lines at each epoch
+    for i, epoch in enumerate(epochs):
+        if i == 0:
+            continue
+        ax1.axvline(x=epoch, color='black', linestyle='--', linewidth=1, label='Epoch Marker' if i == 1 else None)
+
+    lines, labels = ax1.get_legend_handles_labels()
+    lines2, labels2 = ax2.get_legend_handles_labels()
+    ax1.legend(lines + lines2, labels + labels2, loc='upper right')
+
+    plt.title("Training Loss and Accuracy over Steps")
+    plt.grid(True)
+    plt.tight_layout()
+    plt.show()
+    
+
+def get_mismatched_word_pairs(
+    predict_labels: List[str],
+    gt_labels: List[str]
+) -> Counter:
+    mismatch_counts = Counter()
+
+    for pred_sentence, gt_sentence in zip(predict_labels, gt_labels):
+        pred_words_raw = pred_sentence.split()
+        gt_words_raw = gt_sentence.split()
+
+        # Normalize words
+        pred_words = [_normalize_word(w) for w in pred_words_raw if _normalize_word(w)] # Filter empty after norm
+        gt_words = [_normalize_word(w) for w in gt_words_raw if _normalize_word(w)]   # Filter empty after norm
+        len_to_compare = min(len(pred_words), len(gt_words))
+
+        for i in range(len_to_compare):
+            pred_word = pred_words[i]
+            gt_word = gt_words[i]
+
+            if pred_word != gt_word:
+                mismatch_counts[(gt_word, pred_word)] += 1
+                
+    return mismatch_counts
+
+def plot_most_mismatched_words(
+    predict_labels: List[str],
+    gt_labels: List[str],
+    top_n: int = 20,
+    figsize: Tuple[int, int] = (8, 6)
+):
+    mismatch_counts = get_mismatched_word_pairs(predict_labels, gt_labels)
+
+    # Prepare data for plotting
+    most_common_mismatches = mismatch_counts.most_common(top_n)
+    labels = [f"'{gt}' → '{pred}'" for (gt, pred), _ in most_common_mismatches]
+    counts = [count for _, count in most_common_mismatches]
+
+    if not labels:
+        print("No mismatch data to plot after filtering.")
+        return
+
+    
+    # Create a bar plot
+    plt.figure(figsize=figsize)
+    df_plot = pd.DataFrame({'Mismatch': labels, 'Frequency': counts})
+    bar_plot = sns.barplot(x='Frequency', y='Mismatch', data=df_plot, hue='Mismatch', palette="viridis", legend=False)
+    plt.title(f"Top {min(top_n, len(labels))} Most Frequent Word Mismatches")
+    plt.xlabel("Frequency of Mismatch")
+    plt.ylabel("Mismatched Pair (Ground Truth → Prediction)")
+    
+    for i, v in enumerate(counts):
+        bar_plot.text(v + (max(counts) * 0.01), i, str(v), color='black', va='center', fontweight='medium')
+        
+    plt.tight_layout()

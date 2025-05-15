@@ -9,9 +9,10 @@ def get_args_parser():
     parser.add_argument('--out-dir', type=str, default='./output', help='output directory')
     parser.add_argument('--train-bs', default=8, type=int, help='train batch size')
     parser.add_argument('--val-bs', default=1, type=int, help='validation batch size')
+    parser.add_argument('--eval-bs', default=1, type=int, help='eval batch size')
     parser.add_argument('--epochs', default=5, type=int, help='nb of epochs')
     parser.add_argument('--num-workers', default=0, type=int, help='nb of workers')
-    parser.add_argument('--eval-iter', default=1000, type=int, help='nb of iterations to run evaluation')
+    parser.add_argument('--eval-iter', default=10000, type=int, help='nb of iterations to run evaluation')
     parser.add_argument('--total-iter', default=100000, type=int, help='nb of total iterations for training')
     parser.add_argument('--warm-up-iter', default=1000, type=int, help='nb of iterations for warm-up')
     parser.add_argument('--print-iter', default=100, type=int, help='nb of total iterations to print information')
@@ -26,4 +27,8 @@ def get_args_parser():
     parser.add_argument('--ema-decay', default=0.9999, type=float, help='Exponential Moving Average (EMA) decay')
     parser.add_argument('--alpha', default=0, type=float, help='kld loss ratio')
 
+    parser.add_argument('--load-model', type=str, default='best_CER', help='Load model eg. for validation')
+    parser.add_argument('--dataset-name', type=str, default='vpippi/lam-dataset', help='Select dataset name')
+    parser.add_argument('--plot-eval', action='store_true', default=False, help = 'wheteher to plot graph at eval stage')
+    
     return parser.parse_args()
