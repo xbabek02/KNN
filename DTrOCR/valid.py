@@ -1,3 +1,4 @@
+import os 
 import torch
 import torch.utils.data
 import torch.backends.cudnn as cudnn
@@ -9,7 +10,7 @@ def send_inputs_to_device(dictionary, device):
     return {key: value.to(device=device) if isinstance(value, torch.Tensor) else value for key, value in dictionary.items()}
 
 
-def validation(model, criterion, evaluation_loader, converter, device):
+def validation(model, criterion, evaluation_loader, converter, device, save=False, epoch=None, step=None):
     """ validation or evaluation """
 
     norm_ED = 0
@@ -29,6 +30,9 @@ def validation(model, criterion, evaluation_loader, converter, device):
     all_wers = []
 
     for i, inputs in enumerate(evaluation_loader):
+        if i % 1_000 == 0:
+            print(f"validating: {i}/{len(evaluation_loader)}")
+        
         labels = inputs['label']
         del(inputs['label'])
 
@@ -82,5 +86,12 @@ def validation(model, criterion, evaluation_loader, converter, device):
     val_loss = valid_loss / count
     CER = tot_ED / float(length_of_gt)
     WER = tot_ED_wer / float(length_of_gt_wer)
+    
+    if save:
+        epoch = f"_{epoch}" if epoch else ""
+        step = f"_{step}" if step else ""
+        
+        utils.store_predictions(all_preds_str, all_labels, os.path.join("output", f"predictions{epoch}{step}.pkl"))
+        utils.store_predictions(all_cers, all_wers, os.path.join("output", f"cers_wers{epoch}{step}.pkl"))
     
     return val_loss, CER, WER, all_cers, all_wers, all_preds_str, all_labels

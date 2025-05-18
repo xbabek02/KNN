@@ -14,7 +14,7 @@ class DTrOCRProcessor:
                 "height": config.image_size[0],
                 'width': config.image_size[1]
             },
-            use_fast=False
+            use_fast=True
         )
         self.tokeniser = GPT2Tokenizer.from_pretrained(
             config.gpt2_hf_model,
